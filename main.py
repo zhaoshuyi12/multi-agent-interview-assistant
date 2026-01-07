@@ -1,0 +1,168 @@
+# main.py
+import asyncio
+from contextlib import asynccontextmanager
+from typing import List, Optional
+
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from langchain_core.tools import BaseTool
+
+from agents.base_agent import create_specialist_agent
+from agents.nodes import AgentState
+from mcp_tools.mcp_integration import get_tools
+from orchestration.workflow import build_agent_workflow
+
+# 自定义模块
+
+
+# 全局变量
+WORKFLOW_GRAPH = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global WORKFLOW_GRAPH
+    print("🚀 正在加载 MCP 工具...")
+
+    try:
+        # 获取所有 MCP 工具
+        all_tools: List[BaseTool] = await get_tools()
+        if not all_tools:
+            raise RuntimeError("❌ 未加载到任何工具，请确保 MCP 服务已启动")
+
+        # 分类工具
+        research_tools = [t for t in all_tools if t.name in ("semantic_search", "add_to_knowledge_base")]
+        analysis_tools = [t for t in all_tools if t.name in (
+            "basic_calculator", "scientific_calculator", "statistical_analysis", "unit_converter"
+        )]
+        web_search_tools = [t for t in all_tools if t.name == "zhiputool"]
+
+        print(f"📚 研究工具: {[t.name for t in research_tools]}")
+        print(f"📊 分析工具: {[t.name for t in analysis_tools]}")
+        print(f"🌐 网络搜索工具: {[t.name for t in web_search_tools]}")
+
+        # 创建智能体
+        researcher = create_specialist_agent(research_tools, "ResearchAgent", "内部知识研究员")
+        analyst = create_specialist_agent(analysis_tools, "AnalysisAgent", "数据分析师")
+        web_searcher = create_specialist_agent(web_search_tools, "WebSearchAgent", "网络搜索专家")
+
+        # 构建工作流
+        global WORKFLOW_GRAPH
+        WORKFLOW_GRAPH = build_agent_workflow(researcher, analyst, web_searcher)
+        print("✅ 多智能体系统启动完成！")
+
+        yield  # 启动完成，服务运行中
+
+    except Exception as e:
+        print(f"💥 启动失败: {e}")
+        raise
+
+
+# 创建 FastAPI 应用，传入 lifespan
+app = FastAPI(
+    title="Multi-Agent Assistant (LangChain 1.0 + LangGraph 1.0)",
+    description="支持研究、分析、网络搜索的智能体系统",
+    version="1.0",
+    lifespan=lifespan  # ← 关键：使用 lifespan 替代 on_event
+)
+
+
+class QueryRequest(BaseModel):
+    query: str
+    thread_id: Optional[str] = "default"
+
+class ApprovalResponse(BaseModel):
+    thread_id: str
+    query: str
+    answer: str
+    executed_by: str
+@app.get("/health")
+async def health_check():
+    return {"status": "ok", "ready": WORKFLOW_GRAPH is not None}
+
+
+@app.get("/tools")
+async def list_tools():
+    tools = await get_tools()
+    return [{"name": t.name, "description": t.description} for t in tools]
+
+
+@app.post("/query")
+async def submit_query(request: QueryRequest):
+    print('yes')
+    if not request.query.strip():
+        raise HTTPException(status_code=400, detail="查询不能为空")
+
+    config = {"configurable": {"thread_id": request.thread_id}}
+
+    initial_state = AgentState(
+        messages=[],
+        query=request.query,
+        query_type="general",
+        research_result={},
+        analysis_result={},
+        web_search_result={},
+        final_answer="",
+        current_agent="user"
+    )
+
+    if WORKFLOW_GRAPH is None:
+        raise HTTPException(status_code=503, detail="系统尚未初始化完成")
+
+    try:
+
+        current_state  = await WORKFLOW_GRAPH.ainvoke(initial_state, config=config)
+        state_vals = current_state
+        return {
+            "thread_id": request.thread_id,
+            "status": "waiting_for_approval",
+            "message": "流程已暂停，请审核以下结果后调用 /approve/{thread_id} 继续",
+            "query": state_vals.get("query"),
+            "current_agent": state_vals.get("current_agent"),
+            "web_search_result": state_vals.get("web_search_result", {}),
+            "research_result": state_vals.get("research_result", {}),
+            "analysis_result": state_vals.get("analysis_result", {})
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"执行失败: {str(e)}")
+
+
+@app.post("/approve/{thread_id}", response_model=ApprovalResponse)
+async def approve_and_continue(thread_id: str):
+    config = {"configurable": {"thread_id": thread_id}}
+
+    # 检查当前是否真的卡在 integrate 前
+    current_state = await WORKFLOW_GRAPH.aget_state(config)
+
+    if not (current_state.next and "integrate" in current_state.next):
+        # 可能已经执行完，或还没到中断点
+        if current_state.values.get("final_answer"):
+            return ApprovalResponse(
+                thread_id=thread_id,
+                query=current_state.values["query"],
+                answer=current_state.values["final_answer"],
+                executed_by=current_state.values.get("current_agent", "unknown")
+            )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="当前流程未处于待审批状态（可能尚未开始或已完成）"
+            )
+
+    # 👉 关键：传入 None 表示“无新输入，继续执行”
+    final_state = await WORKFLOW_GRAPH.ainvoke(None, config)
+
+    return ApprovalResponse(
+        thread_id=thread_id,
+        query=final_state["query"],
+        answer=final_state["final_answer"],
+        executed_by=final_state.get("current_agent", "unknown")
+    )
+
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
