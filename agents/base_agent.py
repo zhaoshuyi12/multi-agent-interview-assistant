@@ -30,8 +30,8 @@ def create_specialist_agent(tools:List[BaseTool],name:str, role:str):
         middleware=[
             SummarizationMiddleware(
                 model=moon,
-                max_tokens_before_summary=4000,
-                messages_to_keep=20,
+                trigger=("tokens",4000),
+                keep=("messages",20),
             ),
             ToolRetryMiddleware(
                 max_retries=3,

@@ -1,10 +1,11 @@
 from typing import Optional, List, Dict
 
+from langchain_chroma import Chroma
 from langchain_classic.chains.history_aware_retriever import create_history_aware_retriever
 from langchain_classic.retrievers import ContextualCompressionRetriever
 from langchain_classic.retrievers.document_compressors import LLMChainExtractor
 from langchain_community.embeddings import DashScopeEmbeddings
-from langchain_community.vectorstores import Chroma
+
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
@@ -16,7 +17,7 @@ class AdaptiveRetrieval:
     def __init__(self, vectorstore_path: str):
         self.embeddings=DashScopeEmbeddings(model="text-embedding-v4", dashscope_api_key=ALi_API_KEY)
         self.vectorstore = Chroma(persist_directory=vectorstore_path, embedding_function=self.embeddings)
-        self.retriever=self.vectorstore.as_retriever(search_kwargs={"k": 5,"score_threshold":0.7})
+        self.retriever=self.vectorstore.as_retriever(search_kwargs={"k": 5})
         self.history_retriever=self.history_retriever()
         self.compress_retriever=ContextualCompressionRetriever(base_compressor=LLMChainExtractor.from_llm(qwen),
                                                                base_retriever=self.retriever)
@@ -39,7 +40,7 @@ class AdaptiveRetrieval:
             return "low"
 
     async def adaptive_retrieve(
-            self,query: str,chat_history: Optional[List] = None,strategy: str = "adaptive") -> List[Dict]:
+            self,query: str,chat_history: Optional[List] = None,strategy: str = "history_aware") -> List[Dict]:
         """自适应检索策略"""
 
         if strategy == "simple":

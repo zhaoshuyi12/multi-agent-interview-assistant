@@ -39,5 +39,5 @@ def build_agent_workflow(research_agent, analysis_agent, web_search_agent):
         checkpointer=memory,
         interrupt_before=["integrate"]  # 在整合前可人工干预
     )
-
+    graph.get_graph().draw_png("workflow.png")
     return graph

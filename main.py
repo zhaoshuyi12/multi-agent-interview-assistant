@@ -1,11 +1,16 @@
 # main.py
 import asyncio
+import os
+import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import List, Optional
+from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, File, Form, UploadFile
 from pydantic import BaseModel
 from langchain_core.tools import BaseTool
+from starlette.responses import JSONResponse
 
 from agents.base_agent import create_specialist_agent
 from agents.nodes import AgentState
@@ -17,7 +22,7 @@ from orchestration.workflow import build_agent_workflow
 
 # 全局变量
 WORKFLOW_GRAPH = None
-
+ResearchTools = []
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -31,7 +36,10 @@ async def lifespan(app: FastAPI):
             raise RuntimeError("❌ 未加载到任何工具，请确保 MCP 服务已启动")
 
         # 分类工具
-        research_tools = [t for t in all_tools if t.name in ("semantic_search", "add_to_knowledge_base")]
+        research_tools = [t for t in all_tools if t.name in ("add_to_knowledge_base","semantic_search"
+                                                             "list_knowledge_base_stats","ingest_document")]
+        global ResearchTools
+        ResearchTools=research_tools
         analysis_tools = [t for t in all_tools if t.name in (
             "basic_calculator", "scientific_calculator", "statistical_analysis", "unit_converter"
         )]
@@ -66,7 +74,10 @@ app = FastAPI(
     lifespan=lifespan  # ← 关键：使用 lifespan 替代 on_event
 )
 
-
+PROJECT_ROOT = Path(__file__).parent.resolve()
+sys.path.insert(0, str(PROJECT_ROOT))
+UPLOAD_DIR = PROJECT_ROOT / "uploads"
+UPLOAD_DIR.mkdir(exist_ok=True)
 class QueryRequest(BaseModel):
     query: str
     thread_id: Optional[str] = "default"
@@ -80,7 +91,17 @@ class ApprovalResponse(BaseModel):
 async def health_check():
     return {"status": "ok", "ready": WORKFLOW_GRAPH is not None}
 
-
+@app.get("/kb/stats")
+async def get_knowledge_base_stats():
+    """获取知识库统计信息"""
+    try:
+        stats_tool = next((t for t in ResearchTools if t.name == "list_knowledge_base_stats"), None)
+        if not stats_tool:
+            return {"error": "未找到 list_knowledge_base_stats 工具"}
+        result = await stats_tool.ainvoke({})
+        return {"stats": result}
+    except Exception as e:
+        return {"error": str(e)}
 @app.get("/tools")
 async def list_tools():
     tools = await get_tools()
@@ -135,16 +156,24 @@ async def approve_and_continue(thread_id: str):
 
     # 检查当前是否真的卡在 integrate 前
     current_state = await WORKFLOW_GRAPH.aget_state(config)
-
+    print(current_state)
     if not (current_state.next and "integrate" in current_state.next):
         # 可能已经执行完，或还没到中断点
+
         if current_state.values.get("final_answer"):
+            print(ApprovalResponse(
+                thread_id=thread_id,
+                query=current_state.values["query"],
+                answer=current_state.values["final_answer"],
+                executed_by=current_state.values.get("current_agent", "unknown")
+            ))
             return ApprovalResponse(
                 thread_id=thread_id,
                 query=current_state.values["query"],
                 answer=current_state.values["final_answer"],
                 executed_by=current_state.values.get("current_agent", "unknown")
             )
+
         else:
             raise HTTPException(
                 status_code=400,
@@ -162,7 +191,36 @@ async def approve_and_continue(thread_id: str):
     )
 
 
+@app.post("/upload")
+async def upload_document(
+        file: UploadFile = File(...),
+        source_name: str = Form(None)
+):
+    """上传 PDF/DOCX 文件到研究知识库"""
+    if not file.filename.lower().endswith((".pdf", ".docx")):
+        raise HTTPException(status_code=400, detail="仅支持 .pdf 和 .docx 文件")
 
+    # 保存文件
+    file_path = UPLOAD_DIR / f"{uuid4()}{Path(file.filename).suffix}"
+    with open(file_path, "wb") as f:
+        f.write(await file.read())
+
+    try:
+        # 获取所有工具
+        all_tools = await get_tools()
+        ingest_tool = next((t for t in all_tools if t.name == "ingest_document"), None)
+
+        if not ingest_tool:
+            raise HTTPException(status_code=500, detail="未找到 ingest_document 工具")
+
+        # 调用工具
+        result = await ingest_tool.ainvoke({"file_path":file_path, "source_name":source_name})
+        return {"message": result}
+
+    finally:
+        # 清理临时文件
+        if file_path.exists():
+            file_path.unlink()
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
