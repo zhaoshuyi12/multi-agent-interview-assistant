@@ -41,14 +41,17 @@ def approve_and_get_answer(thread_id: str):
 def get_kb_stats():
     """获取知识库统计信息"""
     try:
-        resp = requests.get(f"{BASE_URL}/kb/stats", timeout=10)
+        resp = requests.get(f"{BASE_URL}/kb/stats")
         if resp.status_code == 200:
             data = resp.json()
             stats = data.get("stats", "无数据")
             if isinstance(stats, dict):
                 return json.dumps(stats, ensure_ascii=False, indent=2)
+            print(stats)
             return str(stats)
         else:
+            import traceback
+            traceback.print_exc()
             return f"❌ 获取失败: {resp.status_code}"
     except Exception as e:
         return f"❌ 请求异常: {str(e)}"
@@ -99,6 +102,7 @@ with gr.Blocks(title="多智能体协作系统") as demo:
     # ===== ✅【新增】第 2 处：插入知识库状态面板 =====
     with gr.Accordion("📚 知识库状态", open=False):
         kb_stats_output = gr.Textbox(label="当前知识库统计", interactive=False, lines=4)
+        print(kb_stats_output)
         refresh_kb_btn = gr.Button("🔄 刷新状态")
         refresh_kb_btn.click(fn=get_kb_stats, inputs=[], outputs=kb_stats_output)
     # ===== 结束新增 =====

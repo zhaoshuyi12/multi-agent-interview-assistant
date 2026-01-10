@@ -36,7 +36,7 @@ async def lifespan(app: FastAPI):
             raise RuntimeError("❌ 未加载到任何工具，请确保 MCP 服务已启动")
 
         # 分类工具
-        research_tools = [t for t in all_tools if t.name in ("add_to_knowledge_base","semantic_search"
+        research_tools = [t for t in all_tools if t.name in ("add_to_knowledge_base","semantic_search",
                                                              "list_knowledge_base_stats","ingest_document")]
         global ResearchTools
         ResearchTools=research_tools
@@ -161,12 +161,6 @@ async def approve_and_continue(thread_id: str):
         # 可能已经执行完，或还没到中断点
 
         if current_state.values.get("final_answer"):
-            print(ApprovalResponse(
-                thread_id=thread_id,
-                query=current_state.values["query"],
-                answer=current_state.values["final_answer"],
-                executed_by=current_state.values.get("current_agent", "unknown")
-            ))
             return ApprovalResponse(
                 thread_id=thread_id,
                 query=current_state.values["query"],
