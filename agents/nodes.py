@@ -18,23 +18,56 @@ class AgentState(TypedDict):
     web_search_result: dict
     final_answer: str
     current_agent:  str
+    user_feedback: str
 #创建节点
 def analysis_query(state: AgentState):
-    prompt=f"""
-        你是一个智能路由器，请严格根据用户问题判断其所属类型，并仅输出以下三个词之一：
-    - research：问题涉及事实、概念、定义、历史、原理、公司背景、技术细节等，需要从内部知识库检索信息。
-    - analysis：问题包含数学计算、统计、公式推导、单位换算、数据分析等，需要调用计算器或分析工具。
-    - web_search：问题涉及实时信息，如当前新闻、天气、股价、体育比分、最新政策、突发事件等，必须联网查询。
-    
-    用户问题：{state['query']}
-    
-    请只输出一个词：research / analysis / web_search
-    """
-    response=moon.invoke(prompt)
-    query_type = response.content.strip().lower()
-    print(query_type)
-    return {"query_type": query_type,"skip_tools":False, "current_agent": "analyzer"}
+    query = state["query"]
+    feedback = state.get("user_feedback", "").strip()
 
+    # 💡 无论是否是迭代，都使用结构化的指令来约束模型
+    role_instruction = """
+    你是一个任务调度专家。你的任务是分析用户问题，并从以下工具中选择最合适的一个。
+    严禁输出任何关于问题的回答、建议或攻略。
+
+    可选工具：
+    1. research: 适合深入的研究、学术定义、百科知识。
+    2. analysis: 适合逻辑推理、数学计算、单位转换。
+    3. web_search: 适合实时信息、天气、最新新闻、具体地点推荐。
+    4. integrate: 仅在不需要任何工具、直接整合现有信息时使用。
+    """
+
+    if not feedback or feedback == "同意":
+        prompt_content = f"{role_instruction}\n\n用户原始问题：{query}\n\n请只输出工具名称（例如：web_search）。"
+    else:
+        prompt_content = f"""
+        {role_instruction}
+
+        ### 任务上下文 📋
+        用户原始问题：{query}
+        用户的修改意见：{feedback}
+
+        ### 输出要求 🧠
+        请结合反馈，严格按照以下格式回复：
+        TOOL: [工具名称]
+        REASON: [简短理由]
+        """
+
+    response = moon.invoke(prompt_content)
+    raw_output = response.content.strip().lower()
+    print(f"LLM 原始输出: {raw_output}")
+
+    # 防御性清洗逻辑保持不变
+    if "web_search" in raw_output or "web" in raw_output:
+        query_type = "web_search"
+    elif "research" in raw_output:
+        query_type = "research"
+    elif "analysis" in raw_output:
+        query_type = "analysis"
+    else:
+        query_type = "integrate"
+
+    print(f"校准后的路由目标: {query_type}")
+    return {"query_type": query_type, "skip_tools": False, "current_agent": "analyzer"}
 
 async def execute_research_agent(state: AgentState, research_agent=None):
     query = state["query"]
@@ -109,23 +142,35 @@ async def run_analysis_node(state: AgentState, agent: Any) -> dict:
     result = await execute_analysis_agent(state, agent)
     return result
 def integrate_results(state: AgentState):
-    print('进入最后回答')
-    skip = state.get("skip_tool", False)
-    query = state["query"]
+    print('进入最后回答整合阶段')
 
-    if skip:
-        # 直接用 LLM 回答通用问题
-        prompt = f"你是一个智能助手，请回答：{query}"
-        response =moon.invoke(prompt)
-        return {"final_answer": [AIMessage(content=response.content)], "current_agent": "integrator"}
+    # 获取原始素材
+    research = state.get("research_result", {}).get("answer", "")
+    analysis = state.get("analysis_result", {}).get("answer", "")
+    web = state.get("web_search_result", {}).get("answer", "")
 
-    # 否则整合工具结果
-    research = state["research_result"].get("answer", "")
-    analysis = state["analysis_result"].get("answer", "")
-    web = state["web_search_result"].get("answer", "")
-    combined = f"研究结果:\n{research}\n\n分析结果:\n{analysis}\n\n网络搜索:\n{web}"
-    final_prompt = f"请整合以下信息，给出最终答案：\n\n{combined}"
+    # 获取用户反馈
+    feedback = state.get("user_feedback", "").strip()
+
+    # 💡 核心优化：构建带有指令优先级的上下文
+    context = f"研究数据：{research}\n分析数据：{analysis}\n实时信息：{web}"
+
+    # 如果有反馈且不是“同意”，则构建反馈指令
+    instruction = "请整合以上信息，给出专业且详尽的回答。"
+    if feedback and feedback != "同意":
+        instruction = f"⚠️ 用户对上一次回答不满意，提出了以下修改意见：【{feedback}】。请严格根据此意见，结合背景数据重新撰写回答。"
+
+    final_prompt = f"""
+    你是一个全能型报告整合专家。
+
+    [背景素材]
+    {context}
+
+    [任务指令]
+    {instruction}
+
+    注意：如果背景素材中缺少用户反馈所需的信息，请诚实说明，不要虚构数据。
+    """
+
     response = moon.invoke(final_prompt)
-    print('----------------------------------')
-    print( response,final_prompt)
     return {"final_answer": response.content, "current_agent": "integrator"}

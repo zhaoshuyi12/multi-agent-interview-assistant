@@ -87,6 +87,9 @@ class ApprovalResponse(BaseModel):
     query: str
     answer: str
     executed_by: str
+
+class ApprovalRequest(BaseModel):
+    feedback: str = "同意"  # 默认值为“同意”，如果用户不写意见则默认通过
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "ready": WORKFLOW_GRAPH is not None}
@@ -134,10 +137,11 @@ async def submit_query(request: QueryRequest):
 
         current_state  = await WORKFLOW_GRAPH.ainvoke(initial_state, config=config)
         state_vals = current_state
+        print(state_vals)
         return {
             "thread_id": request.thread_id,
             "status": "waiting_for_approval",
-            "message": "流程已暂停，请审核以下结果后调用 /approve/{thread_id} 继续",
+            "message": "流程已暂停。请审核各智能体的输出结果：若满意请提交‘同意’以生成最终答案；若不满意请提交具体的‘修改意见’，系统将根据反馈重新生成内容。",
             "query": state_vals.get("query"),
             "current_agent": state_vals.get("current_agent"),
             "web_search_result": state_vals.get("web_search_result", {}),
@@ -151,13 +155,13 @@ async def submit_query(request: QueryRequest):
 
 
 @app.post("/approve/{thread_id}", response_model=ApprovalResponse)
-async def approve_and_continue(thread_id: str):
+async def approve_and_continue(thread_id: str,request: ApprovalRequest):
     config = {"configurable": {"thread_id": thread_id}}
 
-    # 检查当前是否真的卡在 integrate 前
+    # 获取当前工作流的状态快照
     current_state = await WORKFLOW_GRAPH.aget_state(config)
     print(current_state)
-    if not (current_state.next and "integrate" in current_state.next):
+    if not current_state.next :
         # 可能已经执行完，或还没到中断点
 
         if current_state.values.get("final_answer"):
@@ -173,14 +177,14 @@ async def approve_and_continue(thread_id: str):
                 status_code=400,
                 detail="当前流程未处于待审批状态（可能尚未开始或已完成）"
             )
-
+    WORKFLOW_GRAPH.update_state(config, {"user_feedback": request.feedback})
     # 👉 关键：传入 None 表示“无新输入，继续执行”
     final_state = await WORKFLOW_GRAPH.ainvoke(None, config)
 
     return ApprovalResponse(
         thread_id=thread_id,
         query=final_state["query"],
-        answer=final_state["final_answer"],
+        answer=final_state.get("final_answer", "抱歉，重新生成答案时出现了问题。"),
         executed_by=final_state.get("current_agent", "unknown")
     )
 

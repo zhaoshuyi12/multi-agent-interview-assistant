@@ -47,7 +47,7 @@
       <paths name="root@connect.bjb2.seetacloud.com:39158 password (2)">
         <serverdata>
           <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
+            <mapping deploy="/root/autodl-tmp/project/智能体项目" local="$PROJECT_DIR$" web="/" />
           </mappings>
         </serverdata>
       </paths>

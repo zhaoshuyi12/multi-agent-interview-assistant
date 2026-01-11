@@ -24,11 +24,12 @@ def submit_query(query: str, thread_id: str):
     except Exception as e:
         return ("", "", "", "", f"❌ 请求异常: {str(e)}", thread_id)
 
-def approve_and_get_answer(thread_id: str):
+def approve_and_get_answer(thread_id: str,feedback: str):
     if not thread_id.strip():
         return "", "请输入有效的 Thread ID"
     try:
-        resp = requests.post(f"{BASE_URL}/approve/{thread_id}", timeout=60)
+        payload = {"feedback": feedback}
+        resp = requests.post(f"{BASE_URL}/approve/{thread_id}",json=payload, timeout=60)
         if resp.status_code == 200:
             data = resp.json()
             return data.get("answer", "无回答"), "✅ 最终答案已生成！"
@@ -95,9 +96,13 @@ def handle_upload(file_obj, source_name: str):
     except Exception as e:
         return f"❌ 请求异常: {str(e)}"
 # ===== Gradio UI =====
-with gr.Blocks(title="多智能体协作系统") as demo:
-    gr.Markdown("# 🤖 多智能体协作系统 (Research + Analysis + Web Search)")
-    gr.Markdown("系统会根据问题自动调用不同智能体，并在整合前暂停，等待人工审核。")
+with gr.Blocks(title="多智能体协作与决策系统") as demo:
+    gr.Markdown("# 🤖 智能体协作与决策系统")
+    gr.Markdown("""
+        系统将根据您的问题调度多个智能体。在最终整合前，系统会**暂停并展示中间过程**。
+        - **批准**：输入“同意”并提交，获取最终总结。
+        - **重做**：输入具体意见并提交，智能体将根据反馈重新执行任务。
+        """)
 
     # ===== ✅【新增】第 2 处：插入知识库状态面板 =====
     with gr.Accordion("📚 知识库状态", open=False):
@@ -110,7 +115,7 @@ with gr.Blocks(title="多智能体协作系统") as demo:
     with gr.Row():
         with gr.Column():
             query_input = gr.Textbox(label="🔍 输入你的问题", lines=3, placeholder="例如：'分析特斯拉最近股价趋势，并查找相关新闻'")
-            thread_id_input = gr.Textbox(label="🆔 Thread ID (可选)", value="")
+            thread_id_input = gr.Textbox(label="🆔 Thread ID ", value="")
             submit_btn = gr.Button("🚀 提交查询", variant="primary")
         with gr.Column():
             status_output = gr.Textbox(label="📌 状态", interactive=False)
@@ -124,8 +129,21 @@ with gr.Blocks(title="多智能体协作系统") as demo:
         with gr.Tab("🌐 网络搜索结果"):
             web_output = gr.Textbox(interactive=False, lines=8)
         with gr.Tab("✅ 最终答案"):
-            final_output = gr.Textbox(interactive=False, lines=10)
-            approve_btn = gr.Button("✔️ 批准并生成最终答案")
+            final_output = gr.Textbox(label="生成的答案内容", interactive=False, lines=10)
+
+            with gr.Row():
+                # 🚀 绿色大按钮，用于直接通过
+                approve_btn = gr.Button("✅ 批准并生成 (同意)", variant="primary")
+
+            # 使用折叠面板把反馈框藏起来，保持界面整洁
+            with gr.Accordion("❌ 结果不满意？填写修改意见", open=False):
+                feedback_input = gr.Textbox(
+                    label="修改意见",
+                    placeholder="例如：数据不够准确，请重新搜索...",
+                    lines=3
+                )
+                retry_btn = gr.Button("🔄 提交意见并重新生成")
+
             approve_status = gr.Textbox(label="审批状态", interactive=False)
 
     with gr.Accordion("📤 上传文档到知识库", open=False):
@@ -163,16 +181,29 @@ with gr.Blocks(title="多智能体协作系统") as demo:
     )
     approve_btn.click(
         fn=approve_and_get_answer,
-        inputs=[thread_display],
+        inputs=[thread_display, feedback_input],
         outputs=[final_output, approve_status]
+    )
+    retry_btn.click(
+        fn=approve_and_get_answer,
+        inputs=[
+            thread_display,  # 1. 告诉后端是哪个任务
+            feedback_input  # 2. 告诉后端具体的修改意见
+        ],
+        outputs=[
+            final_output,  # 刷新最终答案框（显示“处理中...”）
+            approve_status  # 刷新状态提示
+        ]
     )
 
     gr.Markdown("""
-     --- 
-    ### 工作流说明
-    1. 提交问题后，系统会并行调用 **研究、分析、网络搜索** 智能体
-    2. 执行到 **整合阶段前会自动暂停**
-    3. 你可在此审查各智能体结果，确认无误后点击 **“批准并生成最终答案”**
+   --- 
+### 🔄 工作流说明
+1. **并行处理**：提交问题后，系统会同时派出 **研究 📚、分析 📊、网络搜索 🌐** 三个智能体。
+2. **人工节点**：在生成最终答案前，系统会**自动暂停**，请你在上方标签页查看各智能体的初步结果。
+3. **反馈与决策**：
+   * ✅ **满意**：在意见框输入“同意”，点击提交，系统将整合出最终报告。
+   * ❌ **不满意**：在意见框输入具体的修改建议（如“请更多参考网络搜索的结果”），系统将**重新运行**整个流程。
     """)
 
     demo.load(fn=get_kb_stats, inputs=[], outputs=kb_stats_output)
