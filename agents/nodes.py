@@ -1,4 +1,5 @@
 #多智能体状态共享
+import operator
 from typing import TypedDict, Annotated, Literal, List, Any
 
 from langchain_core.messages import AIMessage
@@ -19,6 +20,7 @@ class AgentState(TypedDict):
     final_answer: str
     current_agent:  str
     user_feedback: str
+    loop_step: Annotated[int, operator.add]
 #创建节点
 def analysis_query(state: AgentState):
     query = state["query"]
@@ -67,7 +69,7 @@ def analysis_query(state: AgentState):
         query_type = "integrate"
 
     print(f"校准后的路由目标: {query_type}")
-    return {"query_type": query_type, "skip_tools": False, "current_agent": "analyzer"}
+    return {"query_type": query_type, "skip_tools": False, "loop_step": 1, "current_agent": "analyzer"}
 
 async def execute_research_agent(state: AgentState, research_agent=None):
     query = state["query"]

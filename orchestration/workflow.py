@@ -24,7 +24,8 @@ def build_agent_workflow(research_agent, analysis_agent, web_search_agent):
 
     def route_after_approval(state: AgentState):
         feedback = state.get("user_feedback", "").strip()
-        if feedback == "同意":
+        count = state.get("loop_step", 0)
+        if feedback == "同意" or count >= 3:
             return END  # ✅ 结束流程
         re_run_tools_keywords = ["搜", "查", "计算", "数据", "分析"]
         if any(kw in feedback for kw in re_run_tools_keywords):

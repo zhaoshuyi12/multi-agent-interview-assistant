@@ -1,25 +1,25 @@
-# Multi-Agent Assistant System
+# Multi-Agent RAG System with LangGraph & MCP 🤖🔍
 
-一个基于 LangChain 和 LangGraph 构建的多智能体助手系统，支持研究、数据分析、网络搜索等功能。
+这是一个基于 **LangGraph** 构建的高度模块化多智能体系统。它集成了 **RAG (检索增强生成)**、**实时网络搜索**、以及 **MCP (Model Context Protocol)** 扩展工具。系统不仅能自主选择工具解决问题，还引入了“人工确认与迭代反馈”机制，确保输出结果的准确性与可控性。
 
-## 🌟 功能特性
+## 🌟 技术亮点
 
-- **多智能体协作**：研究智能体、分析智能体、网络搜索智能体协同工作
-- **MCP 工具集成**：支持多种工具，包括计算器、科学研究、网络搜索等
-- **自适应检索**：智能判断查询类型，选择合适的处理策略
-- **RESTful API**：提供完整的 HTTP API 接口
-- **持久化存储**：支持对话历史和知识库的持久化
+- **有状态图流 (LangGraph)**：使用 `StateGraph` 管理复杂任务流，支持条件路由、循环迭代及状态持久化。
+- **MCP 协议集成**：通过 `FastMCP` 实现了计算器、研究检索、网络搜索等独立微服务工具，具备极强的扩展性。
+- **自适应 RAG 策略**：基于 `ChromaDB` 和 `DashScope` 嵌入，支持历史感知的检索压缩，有效提升知识库问答精度。
+- **Human-in-the-Loop**：设计了反馈循环节点，用户可以对 AI 生成的初步结果进行评价、修正，并触发系统重新分析执行。
+- **异步 FastAPI 后端**：采用异步并发处理工具调用，结合 `Gradio` 提供直观的多智能体协作过程展示。
 
-## 🏗️ 系统架构
+## 🏗️ 系统架构图
 
-### 智能体类型
-- **ResearchAgent**：内部知识研究员，负责语义搜索和知识库管理
-- **AnalysisAgent**：数据分析师，执行数学计算、统计分析、单位转换
-- **WebSearchAgent**：网络搜索专家，获取实时信息（新闻、天气、股价等）
 
-### 核心组件
-- **LangChain**：LLM 应用开发框架
-- **LangGraph**：工作流编排引擎
-- **FastMCP**：MCP 服务器实现
-- **FastAPI**：Web 服务框架
-- **Chroma/FAISS**：向量数据库
+*(建议在此处放置由代码生成的 Mermaid 图或逻辑流程图)*
+
+1. **Analyzer (调度专家)**：解析意图，决定流向 `research`、`analysis` 或 `web_search`。
+2. **Specialist Agents (专家集群)**：
+   - `Research Agent`: 深入本地知识库进行语义检索。
+   - `Analysis Agent`: 处理复杂的逻辑计算。
+   - `Web Search Agent`: 获取互联网实时信息。
+3. **Integrator (整合器)**：多源信息汇聚、去重、逻辑校验并生成最终回答。
+4. **Approval Loop (反馈环)**：用户介入，决定直接完成任务或要求 AI 修正。
+
