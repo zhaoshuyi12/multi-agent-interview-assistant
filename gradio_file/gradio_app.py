@@ -124,6 +124,7 @@ with gr.Blocks(title="多智能体协作与决策系统") as demo:
     with gr.Tabs():
         with gr.Tab("📚 研究结果 (内部知识库)"):
             research_output = gr.Textbox(interactive=False, lines=8)
+            clear_research_btn = gr.Button("🗑️ 清空研究结果")
         with gr.Tab("📊 分析结果 (计算器/统计)"):
             analysis_output = gr.Textbox(interactive=False, lines=8)
         with gr.Tab("🌐 网络搜索结果"):
@@ -172,6 +173,10 @@ with gr.Blocks(title="多智能体协作与决策系统") as demo:
 
     # 事件绑定
     submit_btn.click(
+        fn=lambda :("⏳ 正在拼命运行中...", "", "", "", ""),
+        outputs=[
+            status_output, research_output, analysis_output, web_output, final_output]
+    ).then(
         fn=submit_query,
         inputs=[query_input, thread_id_input],
         outputs=[
@@ -195,6 +200,7 @@ with gr.Blocks(title="多智能体协作与决策系统") as demo:
             approve_status  # 刷新状态提示
         ]
     )
+
 
     gr.Markdown("""
    --- 
