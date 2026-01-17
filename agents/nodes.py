@@ -2,15 +2,15 @@
 import operator
 from typing import TypedDict, Annotated, Literal, List, Any
 
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, AnyMessage
+from langgraph.graph import add_messages
 from pydantic import Field
 
 from RAG.adaptive_retrival import AdaptiveRetrieval
 from config.llm_config import moon
 
-
 class AgentState(TypedDict):
-    messages: Annotated[List[str], Field(description="对话历史")]
+    messages: Annotated[list[AnyMessage],add_messages]
     query: Annotated[str, Field(description="当前问题")]
     query_type: Literal["research", "analysis", "web_search"]  # 查询类型
     skip_tool: bool
