@@ -3,14 +3,12 @@ import operator
 from typing import TypedDict, Annotated, Literal, List, Any
 
 from langchain_core.messages import AIMessage, AnyMessage
-from langgraph.graph import add_messages
+from langgraph.graph import add_messages, MessagesState
 from pydantic import Field
-
 from RAG.adaptive_retrival import AdaptiveRetrieval
 from config.llm_config import moon
 
-class AgentState(TypedDict):
-    messages: Annotated[list[AnyMessage],add_messages]
+class AgentState(MessagesState):
     query: Annotated[str, Field(description="当前问题")]
     query_type: Literal["research", "analysis", "web_search"]  # 查询类型
     skip_tool: bool
@@ -80,8 +78,7 @@ async def execute_research_agent(state: AgentState, research_agent=None):
     # 执行自适应检索（自动选择策略）
     retrieved_docs = await retriever.adaptive_retrieve(
         query=query,
-        chat_history=[],
-        strategy="history_aware"
+        chat_history=[]
     )
     print(retrieved_docs)
     # 构建回答

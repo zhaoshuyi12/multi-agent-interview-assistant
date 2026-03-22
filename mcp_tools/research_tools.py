@@ -1,4 +1,4 @@
-# research_tools.py (修正版)
+# research_tools.py (LangChain 1.0 版本，功能不变)
 
 import json
 from pathlib import Path
@@ -7,7 +7,7 @@ import sys
 import os
 from datetime import datetime
 from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_text_splitters  import RecursiveCharacterTextSplitter
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
@@ -69,7 +69,6 @@ def add_to_knowledge_base(
         }
         doc = Document(page_content=text, metadata=metadata)
         vectorstore.add_documents([doc])
-        vectorstore.persist()
 
         # 更新元数据文件
         current_count = vectorstore._collection.count()

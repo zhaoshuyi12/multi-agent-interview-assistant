@@ -177,7 +177,7 @@ async def approve_and_continue(thread_id: str,request: ApprovalRequest):
                 status_code=400,
                 detail="当前流程未处于待审批状态（可能尚未开始或已完成）"
             )
-    WORKFLOW_GRAPH.update_state(config, {"user_feedback": request.feedback})
+    WORKFLOW_GRAPH.aupdate_state(config, {"user_feedback": request.feedback})
     # 👉 关键：传入 None 表示“无新输入，继续执行”
     final_state = await WORKFLOW_GRAPH.ainvoke(None, config)
 

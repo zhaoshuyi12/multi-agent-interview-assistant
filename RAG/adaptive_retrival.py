@@ -40,34 +40,32 @@ class AdaptiveRetrieval:
             return "low"
 
     async def adaptive_retrieve(
-            self,query: str,chat_history: Optional[List] = None,strategy: str = "history_aware") -> List[Dict]:
+            self, query: str, chat_history: Optional[List] = None, strategy: str = "auto") -> List[Dict]:
         """自适应检索策略"""
-
+        
         if strategy == "simple":
             # 简单检索
             docs = self.retriever.invoke(query)
 
         elif strategy == "history_aware" and chat_history:
-            # 考虑历史
+            # 考虑历史对话时使用
             docs = self.history_retriever.invoke({
                 "input": query,
                 "chat_history": chat_history
             })
-        elif strategy=="compressed":
-            docs=self.compress_retriever.invoke(query)
+        elif strategy == "compressed":
+            docs = self.compress_retriever.invoke(query)
         else:
+            # 自动模式：根据查询复杂度选择策略
             complexity = self.assess_query_complexity(query)
-            if complexity == "high" and chat_history:
-                # 高度复杂查询
-                docs = self.history_retriever.invoke({
-                    "input": query,
-                    "chat_history": chat_history
-                })
+            if complexity == "high":
+                # 高复杂度查询 → 使用压缩检索（即使没有历史对话）
+                docs = self.compress_retriever.invoke(query)
             elif complexity == "medium":
-                # 中等复杂查询
+                # 中等复杂查询 → 也使用压缩检索
                 docs = self.compress_retriever.invoke(query)
             else:
-                # 简单查询
+                # 简单查询 → 基础检索
                 docs = self.retriever.invoke(query)
         return [{"content": doc.page_content, "metadata": doc.metadata} for doc in docs]
     async  def add_to_knowlege(self,documents:List[str],metadata:Optional[Dict]=None):
